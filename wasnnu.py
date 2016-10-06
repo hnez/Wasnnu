@@ -3,11 +3,8 @@
 import sys
 
 import pyrfc3339 as rfc3339
-from datetime import datetime
+import datetime as dt
 import pytz
-
-def utc_now():
-    return(datetime.utcnow().replace(tzinfo=pytz.utc))
 
 weekdays= [
     'Monday',
@@ -18,6 +15,18 @@ weekdays= [
     'Saturday',
     'Sunday'
 ]
+
+def utc_now():
+    return(dt.datetime.utcnow().replace(tzinfo=pytz.utc))
+
+def human_readable_timedelta(td):
+    td= int(td.total_seconds())
+
+    seconds= td % 60
+    minutes= (td//60) % 60
+    hours= (td//3600)
+
+    return('{:02}:{:02}:{:02}'.format(hours, minutes, seconds))
 
 class TimeSlice(object):
     def __init__(self, start, end, comment):
@@ -150,6 +159,22 @@ class TimeTable(object):
 
         fd.close()
 
+    def active_time_between(self, start=None, end=None):
+        if not start:
+            start= self.slices[0].start
+
+        if not end:
+            end= self.slices[-1].end
+
+        between= filter(
+            lambda t: t.start >= start and t.end <=end,
+            self.slices
+        )
+
+        deltas= iter(t.end - t.start for t in between)
+
+        return(sum(deltas, dt.timedelta(0)))
+
     def __str__(self):
         return ('\n'.join(self.to_lines()))
 
@@ -171,6 +196,13 @@ class CommandLine(object):
         self.tt.stamp_out(' '.join(args))
 
         self.tt.safe()
+
+    def cmd_total(self, args):
+        dt= self.tt.active_time_between()
+
+        hr= human_readable_timedelta(dt)
+
+        print('Total time spent: ' + hr)
 
 if __name__ == '__main__':
     cmdline= CommandLine()
