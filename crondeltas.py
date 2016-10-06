@@ -69,10 +69,14 @@ class CronTime(object):
             for minute in self.rule['minute']
         )
 
-        # TODO: check dow
         clean= filter(lambda c: c is not None, candidates)
 
-        after= it.dropwhile(lambda c: c<start, clean)
+        dowcheck= filter(
+            lambda c: c.timetuple()[6] in self.rule['dow'] ,
+            clean
+        )
+
+        after= it.dropwhile(lambda c: c<start, dowcheck)
 
         return(next(after))
 
