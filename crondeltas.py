@@ -45,40 +45,53 @@ class CronTime(object):
 
         return(sorted(items.intersection(avail)))
 
-    def next_match(self, start):
+    def timetuple_dict(self, pit):
         tt= dict(
             zip(
                 'year month dom hour minute sec dow yday isdst'.split(),
-                start.timetuple()
+                pit.timetuple()
             )
         )
 
-        def noerr_dt(*kargs):
-            try:
-                return (dt.datetime(*kargs))
-            except ValueError:
-                return (None)
+        return (tt)
 
-        # This is super bad for performance
-        candidates= iter (
-            noerr_dt(year, month, day, hour, minute)
-            for year in self.rule['year']
-            for month in self.rule['month']
-            for day in self.rule['dom']
-            for hour in self.rule['hour']
-            for minute in self.rule['minute']
+    def after(self, pit):
+        after= self.timetuple_dict(pit)
+
+        def seq_starting_at(seq, at):
+            return(it.dropwhile(lambda s: s<at, seq))
+
+        def possible_days():
+            years_rem= seq_starting_at(self.rule['year'], after['year'])
+            days= it.product(years_rem, self.rule['month'], self.rule['dom'])
+
+            for day in days:
+                try:
+                    dto= dt.date(day[0], day[1], day[2])
+                except ValueError:
+                    continue
+
+                if dto<pit.date():
+                    continue
+
+                if self.timetuple_dict(dto)['dow'] not in self.rule['dow']:
+                    continue
+
+                yield(dto)
+
+        possible_times= iter (
+            dt.time(hm[0], hm[1]) for hm in
+            it.product(self.rule['hour'], self.rule['minute'])
         )
 
-        clean= filter(lambda c: c is not None, candidates)
-
-        dowcheck= filter(
-            lambda c: c.timetuple()[6] in self.rule['dow'] ,
-            clean
+        possible_datetimes= iter (
+            dt.datetime.combine(d[0], d[1]) for d in
+            it.product(possible_days(), possible_times)
         )
 
-        after= it.dropwhile(lambda c: c<start, dowcheck)
+        datetimes_after= it.dropwhile(lambda d: d<pit, possible_datetimes)
 
-        return(next(after))
+        return(datetimes_after)
 
 class CronTimeSlice(object):
     def __init__(self, line):
@@ -87,11 +100,12 @@ class CronTimeSlice(object):
         self.start= CronTime(start)
         self.end= CronTime(end)
 
-    def after(self, pot):
-        end= pot
+    def after(self, pit):
+        starts= iter(self.start.after(pit))
+        ends= iter(self.end.after(pit))
 
-        while True:
-            start= self.start.next_match(end)
-            end= self.end.next_match(start)
-
-            yield(start, end)
+        for start in starts:
+            for end in ends:
+                if end >= start:
+                    yield(start, end)
+                    break
