@@ -6,6 +6,8 @@ import pyrfc3339 as rfc3339
 import datetime as dt
 import pytz
 
+import crondeltas as cd
+
 weekdays= [
     'Monday',
     'Tuesday',
@@ -100,7 +102,10 @@ class TimeTable(object):
 
             (key, value)= (a.strip() for a in hdr.split(':'))
 
-            header[key]= value
+            if not key in header:
+                header[key]=list()
+
+            header[key].append(value)
 
         return(header)
 
@@ -134,8 +139,9 @@ class TimeTable(object):
         lastslice.comment= comment
 
     def to_lines(self):
-        for k in sorted(self.header.keys()):
-            yield('{}: {}'.format(k, self.header[k]))
+        for key in sorted(self.header):
+            for hdrln in self.header[key]:
+                yield('{}: {}'.format(key, hdrln))
 
         yield('')
 
@@ -179,10 +185,15 @@ class TimeTable(object):
         return ('\n'.join(self.to_lines()))
 
 class CommandLine(object):
-    def __init__(self):
-        self.tt= TimeTable('timetable')
-
     def cmd(self, args):
+        tablename= 'timetable'
+
+        if args[0] == '-f':
+            tablename= args[1]
+            args=args[2:]
+
+        self.tt= TimeTable(tablename)
+
         fn= getattr(self, 'cmd_' + args[0])
 
         return(fn(args[1:]))
@@ -203,6 +214,31 @@ class CommandLine(object):
         hr= human_readable_timedelta(dt)
 
         print('Total time spent: ' + hr)
+
+    def cmd_fake(self, args):
+        ftt= TimeTable('faked')
+        zero= dt.datetime.now()
+
+        lists= cd.CronCombinedLists()
+
+        if 'FakeBlackList' in ftt.header:
+            for ln in ftt.header['FakeBlackList']:
+                lists.append(cd.CronBlackList(ln, zero))
+
+        if 'FakeWhiteList' in ftt.header:
+            for ln in ftt.header['FakeWhiteList']:
+                lists.append(cd.CronWhiteList(ln, zero))
+
+        for sl in self.tt.slices:
+            (fstart, fend)= lists.fit(sl.end-sl.start)
+
+            fsl= TimeSlice(fstart.replace(tzinfo=pytz.utc),
+                           fend.replace(tzinfo=pytz.utc),
+                           sl.comment)
+
+            ftt.slices.append(fsl)
+
+        ftt.safe()
 
 if __name__ == '__main__':
     cmdline= CommandLine()
