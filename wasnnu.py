@@ -6,7 +6,7 @@ import pyrfc3339 as rfc3339
 import datetime as dt
 import pytz
 
-import crondeltas as cd
+import itertools as it
 
 weekdays= [
     'Monday',
@@ -18,9 +18,6 @@ weekdays= [
     'Sunday'
 ]
 
-def utc_now():
-    return(dt.datetime.utcnow().replace(tzinfo=pytz.utc))
-
 def human_readable_timedelta(td):
     td= int(td.total_seconds())
 
@@ -31,76 +28,101 @@ def human_readable_timedelta(td):
     return('{:02}:{:02}:{:02}'.format(hours, minutes, seconds))
 
 class TimeSlice(object):
-    def __init__(self, start, end, comment):
-        self.start= start
-        self.end= end
+    def __init__(self, header, start=None, end=None):
+        if (start is None) and ('Start' in header):
+            self.start= rfc3339.parse(header['Start'][0])
+        else:
+            self.start= start
 
-        self.comment= comment
+        if (end is None) and ('End' in header):
+            self.end= rfc3339.parse(header['End'][0])
+        else:
+            self.end= end
 
-    @staticmethod
-    def from_str(line):
-        fields= [a.strip() for a in line.split(' ', 2)]
-        fields.extend(None for i in range(len(fields), 3))
+        self.header= dict()
 
-        start= rfc3339.parse(fields[0]) if fields[0] else None
-        end= rfc3339.parse(fields[1]) if fields[1] else None
-        comment= fields[2]
-
-        return (TimeSlice(start, end, comment))
+        for (k,vlist) in header.items():
+            for v in vlist:
+                self.header_add(k,v)
 
     def is_closed(self):
         return (self.end is not None)
 
-    def fmt_start(self):
-        return(rfc3339.generate(self.start) if self.start else '')
-
-    def fmt_end(self):
-        return(rfc3339.generate(self.end) if self.end else '')
-
-    def fmt_comment(self):
-        return(self.comment.replace('\n', '') if self.comment else '')
-
     def __lt__(self, other):
         return (self.start < other.start)
 
-    def __repr__(self):
-        ret= 'TimeSlice(rfc3339.parse(\'{}\'),rfc3339.parse(\'{}\'), \'{}\')'.format(
-            self.fmt_start(),
-            self.fmt_end(),
-            self.fmt_comment(),
-        )
+    def duration(self):
+        return(self.end - self.start)
 
-        return (ret)
+    def header_add(self, k, v):
+        if k in ['Start', 'End']:
+            return
 
-    def __str__(self):
-        ret= '{} {} {}'.format(
-            self.fmt_start(),
-            self.fmt_end(),
-            self.fmt_comment(),
-        )
+        if k not in self.header:
+            self.header[k]= list()
 
-        return (ret.strip())
+        self.header[k].append(v)
+
+    def rfc_start(self):
+        return(rfc3339.generate(self.start, utc=False))
+
+    def rfc_end(self):
+        return(rfc3339.generate(self.end, utc=False))
+
+    def header_lines(self):
+        FMT= '{}: {}'
+
+        if self.start is not None:
+            yield(FMT.format('Start', self.rfc_start()))
+
+        if self.end is not None:
+            yield(FMT.format('End', self.rfc_end()))
+
+        keys= sorted(self.header.keys())
+
+        for k in keys:
+            for v in self.header[k]:
+                yield(FMT.format(k, v))
+
+        yield('')
 
 class TimeTable(object):
-    def __init__(self, path):
-        self.path=path
+    def __init__(self, file_path, header, slices):
+        self.path= file_path
+        self.header= header
+        self.slices= slices
 
+        if 'TimeZone' in self.header:
+            tzname= self.header['TimeZone'][0]
+
+            self.tz= pytz.timezone(tzname)
+        else:
+            self.tz= pytz.utc
+
+    @classmethod
+    def from_file(cls, path):
         fd= open(path)
-        lines= iter(fd)
+        segments= iter(cls.parse_segments(fd))
 
-        self.header= self.parse_header(lines)
-        self.slices= self.parse_body(lines)
+        header= next(segments, dict())
+        slices= sorted(map(TimeSlice, segments))
 
         fd.close()
 
-    def parse_header(self, lines):
+        return(TimeTable(path, header, slices))
+
+    @classmethod
+    def parse_header(cls, lines):
         header={}
 
         for hdr in lines:
             if not hdr.strip():
                 break
 
-            (key, value)= (a.strip() for a in hdr.split(':'))
+            if hdr.startswith('#'):
+                continue
+
+            (key, value)= (a.strip() for a in hdr.split(':', 1))
 
             if not key in header:
                 header[key]=list()
@@ -109,54 +131,68 @@ class TimeTable(object):
 
         return(header)
 
-    def parse_body(self, lines):
-        slices=[]
+    @classmethod
+    def parse_segments(cls, lines):
+        next_seg= cls.parse_header(lines)
 
-        for slc in lines:
-            if slc.startswith('#') or not slc.strip():
-                continue
+        while next_seg:
+            yield(next_seg)
 
-            slices.append(TimeSlice.from_str(slc))
+            next_seg= cls.parse_header(lines)
 
-        return(sorted(slices))
+    def header_lines(self):
+        keys= sorted(self.header.keys())
+
+        for k in keys:
+            for v in self.header[k]:
+                yield('{}: {}'.format(k, v))
+
+        yield('')
+
+    def dt_now(self):
+        return(dt.datetime.now(self.tz))
 
     def stamp_in(self):
         if self.slices:
             lastslice= self.slices[-1]
 
             if not lastslice.is_closed():
-                Exception('The last time slice is still open')
+                raise(UserWarning('The last time slice is still open'))
 
-        self.slices.append(TimeSlice(utc_now(), None, None))
+        slice_new= TimeSlice({}, self.dt_now())
+
+        self.slices.append(slice_new)
 
     def stamp_out(self, comment):
         lastslice= self.slices[-1]
 
         if lastslice.is_closed():
-            Exception('The last time slice is not open')
+            raise(UserWarning('The last time slice is not open'))
 
-        lastslice.end=utc_now()
-        lastslice.comment= comment
+        lastslice.end= self.dt_now()
+
+        lastslice.header_add('Description', comment)
 
     def to_lines(self):
-        for key in sorted(self.header):
-            for hdrln in self.header[key]:
-                yield('{}: {}'.format(key, hdrln))
+        for ln in self.header_lines():
+            yield (ln)
 
-        yield('')
-
-        lastday= None
+        last_date= None
 
         for s in self.slices:
-            day= s.start.date()
+            date= s.start.date()
 
-            if lastday != day:
-                lastday= day
+            if date != last_date:
+                last_date= date
 
-                yield('# {} {} {} ({})'.format(
-                    day.year, day.month, day.day, weekdays[day.weekday()]))
+                yield(
+                    '# {} {} {} {}'.format(
+                        date.year, date.month, date.day, weekdays[date.weekday()]
+                    )
+                )
 
-            yield(str(s))
+            for ln in s.header_lines():
+                yield(ln)
 
     def safe(self):
         fd= open(self.path, 'w')
@@ -177,7 +213,7 @@ class TimeTable(object):
             self.slices
         )
 
-        deltas= iter(t.end - t.start for t in between)
+        deltas= iter(s.duration() for s in between)
 
         return(sum(deltas, dt.timedelta(0)))
 
@@ -186,59 +222,68 @@ class TimeTable(object):
 
 class CommandLine(object):
     def cmd(self, args):
-        tablename= 'timetable'
+        self.tablename= 'timetable'
 
         if args[0] == '-f':
-            tablename= args[1]
+            self.tablename= args[1]
             args=args[2:]
-
-        self.tt= TimeTable(tablename)
 
         fn= getattr(self, 'cmd_' + args[0])
 
-        return(fn(args[1:]))
+        try:
+            return(fn(args[1:]))
+        except UserWarning as u:
+            sys.stderr.write('Error: {}\n'.format(' '.join(u.args)))
+
+    def get_timezone_hint(self):
+        try:
+            fd= open('/etc/timezone')
+
+            return(fd.read().strip())
+
+            fd.close()
+        except FileNotFoundError:
+            pass
+
+        return('UTC')
+
+    def cmd_init(self, args):
+        headers= dict()
+
+        tzname_def= self.get_timezone_hint()
+        tzname= input('Timezone [{}]: '.format(tzname_def)).strip()
+
+        headers['TimeZone']= [tzname or tzname_def]
+
+        description= input('Description [None]: ').strip()
+        if description:
+            headers['Description']= [description]
+
+        tt= TimeTable(self.tablename, headers, [])
+        tt.safe()
 
     def cmd_in(self, args):
-        self.tt.stamp_in()
+        tt= TimeTable.from_file(self.tablename)
 
-        self.tt.safe()
+        tt.stamp_in()
+
+        tt.safe()
 
     def cmd_out(self, args):
-        self.tt.stamp_out(' '.join(args))
+        tt= TimeTable.from_file(self.tablename)
 
-        self.tt.safe()
+        tt.stamp_out(' '.join(args))
+
+        tt.safe()
 
     def cmd_total(self, args):
-        dt= self.tt.active_time_between()
+        tt= TimeTable.from_file(self.tablename)
+
+        dt= tt.active_time_between()
 
         hr= human_readable_timedelta(dt)
 
         print('Total time spent: ' + hr)
-
-    def cmd_fake(self, args):
-        ftt= TimeTable('faked')
-        zero= dt.datetime.now()
-
-        lists= cd.CronCombinedLists()
-
-        if 'FakeBlackList' in ftt.header:
-            for ln in ftt.header['FakeBlackList']:
-                lists.append(cd.CronBlackList(ln, zero))
-
-        if 'FakeWhiteList' in ftt.header:
-            for ln in ftt.header['FakeWhiteList']:
-                lists.append(cd.CronWhiteList(ln, zero))
-
-        for sl in self.tt.slices:
-            (fstart, fend)= lists.fit(sl.end-sl.start)
-
-            fsl= TimeSlice(fstart.replace(tzinfo=pytz.utc),
-                           fend.replace(tzinfo=pytz.utc),
-                           sl.comment)
-
-            ftt.slices.append(fsl)
-
-        ftt.safe()
 
 if __name__ == '__main__':
     cmdline= CommandLine()
