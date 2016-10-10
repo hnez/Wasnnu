@@ -22,6 +22,7 @@ import datetime as dt
 import pytz
 
 import itertools as it
+from uuid import uuid4 as uuid_random
 
 weekdays= [
     'Monday',
@@ -175,6 +176,7 @@ class TimeTable(object):
                 raise(UserWarning('The last time slice is still open'))
 
         slice_new= TimeSlice({}, self.dt_now())
+        slice_new.header_add('UUID', str(uuid_random()))
 
         self.slices.append(slice_new)
 
