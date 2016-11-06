@@ -302,6 +302,59 @@ class CommandLine(object):
 
         print('Total time spent: ' + hr)
 
+    def cmd_days(self, args):
+        tt= TimeTable.from_file(self.tablename)
+
+        def day_slices():
+            date= None
+            day= list()
+
+            for s in tt.slices:
+                if date != s.start.date():
+                    date= s.start.date()
+
+                    if day:
+                        yield (day)
+
+                    day= list()
+
+                day.append(s)
+
+            if day:
+                yield (day)
+
+        month= None
+        month_dur= None
+
+        for day in day_slices():
+            date= day[0].start.date()
+            deltas= iter(s.duration() for s in day)
+            duration= sum(deltas, dt.timedelta(0))
+
+            if date.month != month:
+                if month_dur:
+                    htd= human_readable_timedelta(month_dur)
+                    print('month {}: {}\n'.format(month, htd))
+
+                month= date.month
+                month_dur= dt.timedelta(0)
+
+            month_dur+= duration
+
+            print('{} {} {} {}: {}'.format(
+                date.year, date.month, date.day, weekdays[date.weekday()],
+                duration
+            ))
+
+        if month_dur:
+            htd= human_readable_timedelta(month_dur)
+            print('month {}: {}\n'.format(month, htd))
+
+        tot= tt.active_time_between()
+        htot= human_readable_timedelta(tot)
+        print('Total time spent: ' + htot)
+
+
 if __name__ == '__main__':
     cmdline= CommandLine()
 
