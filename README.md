@@ -2,6 +2,7 @@ Wasnnu
 ======
 
 From the german expression "Was 'n nu?" - "what now?".
+
 The most minimalistic time tracking software.
 
 Please keep in mind that I wrote this tool
@@ -29,7 +30,7 @@ Setup
 
 You will most likely want to use `git` to manage
 your timetables to keep them synchronized and
-minimize damage should wasnnu decide to eat your data.
+minimize damage, should wasnnu decide to eat your data.
 
 This is how you setup up a test project:
 
