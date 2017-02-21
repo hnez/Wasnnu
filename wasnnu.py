@@ -211,7 +211,7 @@ class TimeTable(object):
             for ln in s.header_lines():
                 yield(ln)
 
-    def safe(self):
+    def save(self):
         fd= open(self.path, 'w')
 
         fd.writelines(s+'\n' for s in self.to_lines())
@@ -277,21 +277,21 @@ class CommandLine(object):
             headers['Description']= [description]
 
         tt= TimeTable(self.tablename, headers, [])
-        tt.safe()
+        tt.save()
 
     def cmd_in(self, args):
         tt= TimeTable.from_file(self.tablename)
 
         tt.stamp_in()
 
-        tt.safe()
+        tt.save()
 
     def cmd_out(self, args):
         tt= TimeTable.from_file(self.tablename)
 
         tt.stamp_out(' '.join(args))
 
-        tt.safe()
+        tt.save()
 
     def cmd_total(self, args):
         tt= TimeTable.from_file(self.tablename)
