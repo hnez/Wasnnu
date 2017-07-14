@@ -8,7 +8,7 @@ def read(fname):
 
 setup(
     name = "wasnnu",
-    version = "0.0.1",
+    version = "0.0.2",
     author = "Leonard Göhrs",
     author_email = "leonard@goehrs.eu",
     description = "A plain text, commandline based python time tracking software",
@@ -19,7 +19,7 @@ setup(
     long_description=read('README.md'),
     entry_points = {
         'console_scripts' : [
-            'wassnu=wassnu:main'
+            'wasnnu=wasnnu:main'
         ]
     },
     classifiers=[
