@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # Copyright (c) 2016 Leonard Göhrs
 #
 # This program is free software: you can redistribute it and/or modify
@@ -355,7 +353,7 @@ class CommandLine(object):
         print('Total time spent: ' + htot)
 
 
-if __name__ == '__main__':
+def main():
     cmdline= CommandLine()
 
     exit(cmdline.cmd(sys.argv[1:]))
