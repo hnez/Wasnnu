@@ -1,7 +1,7 @@
 Wasnnu
 ======
 
-From the german expression "Was 'n nu?" - "what now?".
+From the german expression "Was 'n nu?" - "what's next?".
 
 The most minimalistic time tracking software.
 
@@ -62,7 +62,7 @@ operate on a `timetable` file in the current directory.
 - `wasnnu total` - the total time logged
 - `wasnnu days` - output a summary of the hours worked.
 
-The example below shows the remaining commands in action:
+The example below shows these commands in action:
 
     $ cd "Wasnnus/test 1"
 
