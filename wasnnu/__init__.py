@@ -14,6 +14,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import sys
+import os
 
 import pyrfc3339 as rfc3339
 import datetime as dt
@@ -235,6 +236,38 @@ class TimeTable(object):
     def __str__(self):
         return ('\n'.join(self.to_lines()))
 
+class GlobalLockFile(object):
+    def __init__(self, path=None):
+        if path is not None:
+            self.path= path
+        elif hasattr(os, "getuid"):
+            self.path= '/var/run/user/{}/wassnu/task'.format(os.getuid())
+        else:
+            self.path= None
+
+    def get_content(self):
+        try:
+            fd= open(self.path, 'r')
+            content= fd.read()
+
+            return content
+
+        except FileNotFoundError:
+            return None
+
+    def set_content(self, content):
+        print('Set Content of {} to {}'.format(self.path, content))
+
+        if content is None:
+            os.remove(self.path)
+
+        else:
+            dirname= os.path.dirname(self.path)
+            os.makedirs(dirname, 0o750, True)
+
+            fd= open(self.path, 'w')
+            fd.write(content)
+
 class CommandLine(object):
     def cmd(self, args):
         self.tablename= 'timetable'
@@ -279,13 +312,22 @@ class CommandLine(object):
 
     def cmd_in(self, args):
         tt= TimeTable.from_file(self.tablename)
+        lf= GlobalLockFile()
+
+        if lf.get_content() is not None:
+            raise(UserWarning('There is an existing lockfile'))
 
         tt.stamp_in()
+        lf.set_content(tt.header['Description'][0])
 
         tt.save()
 
     def cmd_out(self, args):
         tt= TimeTable.from_file(self.tablename)
+        lf= GlobalLockFile()
+
+        if lf.get_content() == tt.header['Description'][0]:
+            lf.set_content(None)
 
         tt.stamp_out(' '.join(args))
 
