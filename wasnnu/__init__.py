@@ -256,8 +256,6 @@ class GlobalLockFile(object):
             return None
 
     def set_content(self, content):
-        print('Set Content of {} to {}'.format(self.path, content))
-
         if content is None:
             os.remove(self.path)
 
